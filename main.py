@@ -126,4 +126,6 @@ async def verify_otp(data: OTPVerify, key: str = Depends(verify_api_key)):
     raise HTTPException(status_code=400, detail="Incorrect OTP. Please check and try again.")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import os
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
