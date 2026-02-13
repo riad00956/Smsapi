@@ -1,131 +1,105 @@
 import smtplib
 import random
 import time
+import os
+from flask import Flask, request, jsonify, render_template_string
 from email.message import EmailMessage
-from fastapi import FastAPI, HTTPException, Header, Depends
-from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, EmailStr
-from typing import Dict
-import uvicorn
 
-app = FastAPI()
+app = Flask(__name__)
 
 # --- CONFIGURATION ---
 SENDER_EMAIL = "ariyanxd02@gmail.com"
-SENDER_PASSWORD = "xvcbgglrppbnwhlt" # App Password (spaces removed)
+SENDER_PASSWORD = "xvcbgglrppbnwhlt"
 ACCESS_KEY = "ariyan-secret-key-2026"
 
-otp_storage: Dict[str, dict] = {}
-spam_monitor: Dict[str, dict] = {}
+otp_storage = {}
+spam_monitor = {}
 
-# --- Request Models ---
-class OTPRequest(BaseModel):
-    email: EmailStr
+# --- HELPER: Verify API Key ---
+def check_key():
+    key = request.headers.get("access-key")
+    if key != ACCESS_KEY:
+        return False
+    return True
 
-class OTPVerify(BaseModel):
-    email: EmailStr
-    otp_code: str
-
-# --- API Key Verify ---
-def verify_api_key(access_key: str = Header(None)):
-    if access_key != ACCESS_KEY:
-        raise HTTPException(status_code=401, detail="Unauthorized Access")
-    return access_key
-
-# --- Home Route ---
-@app.get("/", response_class=HTMLResponse)
-async def read_index():
+# --- HOME ROUTE (Using index.html) ---
+@app.route('/')
+def index():
     try:
         with open("index.html", "r", encoding="utf-8") as f:
             return f.read()
     except FileNotFoundError:
-        return "<h2 style='text-align:center;margin-top:50px;'>Server is Live! But index.html not found.</h2>"
+        return "<h2>Flask Server Live. index.html missing!</h2>"
 
-# --- Request OTP ---
-@app.post("/request-otp")
-async def request_otp(data: OTPRequest, key: str = Depends(verify_api_key)):
-    email = data.email
+# --- REQUEST OTP API ---
+@app.route('/request-otp', methods=['POST'])
+def request_otp():
+    if not check_key():
+        return jsonify({"detail": "Unauthorized Access"}), 401
+
+    data = request.json
+    email = data.get("email")
     current_time = time.time()
 
-    # Initialize spam monitor
+    if not email:
+        return jsonify({"detail": "Email is required"}), 400
+
+    # Spam Protection
     if email not in spam_monitor:
         spam_monitor[email] = {"attempts": 0, "block_until": 0}
-
+    
     user_data = spam_monitor[email]
-
-    # Block check
     if current_time < user_data["block_until"]:
-        remaining = int(user_data["block_until"] - current_time)
-        raise HTTPException(status_code=429, detail=f"Spam protection! Try after {remaining} seconds.")
-
-    # Reset attempts after block period or 10 mins of inactivity
-    if current_time > user_data["block_until"] and user_data["block_until"] != 0:
-        user_data["attempts"] = 0
-        user_data["block_until"] = 0
-
-    user_data["attempts"] += 1
-
-    # Block after 10 attempts
-    if user_data["attempts"] > 10:
-        user_data["block_until"] = current_time + 300 # 5 min block
-        raise HTTPException(status_code=429, detail="Too many attempts. Blocked for 5 mins.")
+        rem = int(user_data["block_until"] - current_time)
+        return jsonify({"detail": f"Blocked! Try after {rem}s"}), 429
 
     otp = str(random.randint(100000, 999999))
 
     try:
-        # Email Setup
         msg = EmailMessage()
         msg["Subject"] = f"Your OTP: {otp}"
         msg["From"] = SENDER_EMAIL
         msg["To"] = email
-        msg.set_content(f"Hello,\n\nYour verification code is: {otp}\n\nThis code will expire in 5 minutes.\nDo not share this code with anyone.")
+        msg.set_content(f"Verification Code: {otp}")
 
-        # SMTP Connection using TLS (Port 587 is more stable on Render)
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
-            server.starttls() # Secure the connection
+        # Port 587 is more reliable on Flask/Render
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as server:
+            server.starttls()
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.send_message(msg)
 
-        # Store OTP with 5 min expiry
-        otp_storage[email] = {
-            "otp": otp,
-            "expires_at": current_time + 300
-        }
+        otp_storage[email] = {"otp": otp, "expires_at": current_time + 300}
+        user_data["attempts"] += 1
+        
+        if user_data["attempts"] > 10:
+            user_data["block_until"] = current_time + 300
+            user_data["attempts"] = 0
 
-        return {"status": "success", "message": "OTP Sent Successfully"}
+        return jsonify({"status": "success", "message": "OTP Sent Successfully"})
 
-    except smtplib.SMTPAuthenticationError:
-        raise HTTPException(status_code=500, detail="Gmail Authentication Failed. Check App Password.")
     except Exception as e:
-        # detailed error for debugging
-        raise HTTPException(status_code=500, detail=f"Network Error: {str(e)}")
+        return jsonify({"detail": f"Network Error: {str(e)}"}), 500
 
-# --- Verify OTP ---
-@app.post("/verify-otp")
-async def verify_otp(data: OTPVerify, key: str = Depends(verify_api_key)):
-    email = data.email
-    otp_code = data.otp_code
+# --- VERIFY OTP API ---
+@app.route('/verify-otp', methods=['POST'])
+def verify_otp():
+    if not check_key():
+        return jsonify({"detail": "Unauthorized"}), 401
+
+    data = request.json
+    email = data.get("email")
+    otp_code = data.get("otp_code")
 
     stored = otp_storage.get(email)
-
-    if not stored:
-        raise HTTPException(status_code=400, detail="No OTP record found. Please request a new one.")
-
-    # Expiry Check
-    if time.time() > stored["expires_at"]:
-        del otp_storage[email]
-        raise HTTPException(status_code=400, detail="OTP Expired. Please request a new one.")
-
-    # Match Check
+    if not stored or time.time() > stored["expires_at"]:
+        return jsonify({"detail": "OTP Expired or Not Found"}), 400
+    
     if stored["otp"] == otp_code:
-        del otp_storage[email] # Clear after success
-        if email in spam_monitor:
-            spam_monitor[email]["attempts"] = 0 # Reset spam count
-        return {"status": "verified", "message": "Verification Successful"}
-
-    raise HTTPException(status_code=400, detail="Incorrect OTP. Please check and try again.")
+        del otp_storage[email]
+        return jsonify({"status": "verified"})
+    
+    return jsonify({"detail": "Invalid OTP"}), 400
 
 if __name__ == "__main__":
-    import os
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
