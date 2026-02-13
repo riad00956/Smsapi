@@ -11,7 +11,7 @@ app = FastAPI()
 
 # --- CONFIGURATION ---
 SENDER_EMAIL = "ariyanxd02@gmail.com"
-SENDER_PASSWORD = "svcdpkejjdgdrfyr"
+SENDER_PASSWORD = "xvcb gglr ppbn whlt"
 ACCESS_KEY = "ariyan-secret-key-2026"
 
 otp_storage: Dict[str, dict] = {}
