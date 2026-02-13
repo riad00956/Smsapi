@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ariyan OTP System</title>
+    <style>
+        body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f4f4f9; margin: 0; }
+        .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 350px; text-align: center; }
+        input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+        button { width: 100%; padding: 10px; background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #0056b3; }
+        .status { margin-top: 15px; font-size: 14px; color: #555; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>Email Verification</h2>
+        <input type="email" id="email" placeholder="Enter Email">
+        <button onclick="sendOTP()">Get Code</button>
+        <hr>
+        <input type="text" id="otp" placeholder="Enter OTP">
+        <button onclick="verifyOTP()" style="background: #28a745;">Verify Code</button>
+        <div id="status" class="status"></div>
+    </div>
+
+    <script>
+        const API_KEY = "ariyan-secret-key-2026";
+
+        async function sendOTP() {
+            const email = document.getElementById('email').value;
+            const res = await fetch(`/request-otp?email=${email}`, {
+                method: 'POST',
+                headers: { 'access-key': API_KEY }
+            });
+            const data = await res.json();
+            document.getElementById('status').innerText = data.detail || data.message;
+        }
+
+        async function verifyOTP() {
+            const email = document.getElementById('email').value;
+            const otp = document.getElementById('otp').value;
+            const res = await fetch(`/verify-otp?email=${email}&otp_code=${otp}`, {
+                method: 'POST',
+                headers: { 'access-key': API_KEY }
+            });
+            const data = await res.json();
+            if(data.status === 'verified') alert("Verification Complete!");
+            else document.getElementById('status').innerText = data.detail || "Error";
+        }
+    </script>
+</body>
+</html>
