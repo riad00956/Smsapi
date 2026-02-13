@@ -5,49 +5,155 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ariyan OTP System</title>
     <style>
-        body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f4f4f9; margin: 0; }
-        .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 350px; text-align: center; }
-        input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
-        button { width: 100%; padding: 10px; background: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
-        button:hover { background: #0056b3; }
-        .status { margin-top: 15px; font-size: 14px; color: #555; }
+        :root { --primary: #007bff; --success: #28a745; --bg: #f4f7fe; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: var(--bg); margin: 0; }
+        .card { background: white; padding: 40px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); width: 380px; text-align: center; }
+        h2 { color: #333; margin-bottom: 20px; }
+        input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; transition: 0.3s; }
+        input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 8px rgba(0,123,255,0.2); }
+        button { width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 16px; margin-top: 10px; transition: 0.3s; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        button:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+        .loader { display: none; width: 20px; height: 20px; border: 3px solid #f3f3f3; border-top: 3px solid var(--primary); border-radius: 50%; animation: spin 1s linear infinite; margin: 10px auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        #status { margin-top: 15px; font-size: 14px; min-height: 20px; font-weight: 500; }
+        .timer { font-size: 13px; color: #666; margin-top: 5px; }
     </style>
 </head>
 <body>
-    <div class="card">
-        <h2>Email Verification</h2>
-        <input type="email" id="email" placeholder="Enter Email">
-        <button onclick="sendOTP()">Get Code</button>
-        <hr>
-        <input type="text" id="otp" placeholder="Enter OTP">
-        <button onclick="verifyOTP()" style="background: #28a745;">Verify Code</button>
-        <div id="status" class="status"></div>
-    </div>
 
-    <script>
-        const API_KEY = "ariyan-secret-key-2026";
+<div class="card">
+    <h2>Verify Email</h2>
+    <input type="email" id="email" placeholder="Enter your email address">
+    
+    <button id="sendBtn" onclick="sendOTP()">
+        <span id="btnText">Get Verification Code</span>
+    </button>
+    <div id="loader" class="loader"></div>
+    <div id="timerDisplay" class="timer"></div>
 
-        async function sendOTP() {
-            const email = document.getElementById('email').value;
-            const res = await fetch(`/request-otp?email=${email}`, {
-                method: 'POST',
-                headers: { 'access-key': API_KEY }
-            });
-            const data = await res.json();
-            document.getElementById('status').innerText = data.detail || data.message;
+    <div style="margin: 20px 0; border-top: 1px solid #eee;"></div>
+
+    <input type="text" id="otp" placeholder="Enter 6-digit OTP">
+    <button onclick="verifyOTP()" style="background: var(--success);">Verify & Complete</button>
+    
+    <div id="status"></div>
+</div>
+
+<script>
+    const API_KEY = "ariyan-secret-key-2026";
+    let countdown;
+
+    async function sendOTP() {
+        const emailInput = document.getElementById('email');
+        const sendBtn = document.getElementById('sendBtn');
+        const btnText = document.getElementById('btnText');
+        const loader = document.getElementById('loader');
+        const status = document.getElementById('status');
+        const timerDisplay = document.getElementById('timerDisplay');
+
+        if (!emailInput.value) {
+            status.innerText = "Please enter an email!";
+            status.style.color = "red";
+            return;
         }
 
-        async function verifyOTP() {
-            const email = document.getElementById('email').value;
-            const otp = document.getElementById('otp').value;
-            const res = await fetch(`/verify-otp?email=${email}&otp_code=${otp}`, {
+        // UI Loading State
+        sendBtn.disabled = true;
+        btnText.innerText = "Sending...";
+        loader.style.display = "block";
+        status.innerText = "";
+
+        try {
+            const res = await fetch('/request-otp', {
                 method: 'POST',
-                headers: { 'access-key': API_KEY }
+                headers: { 
+                    'access-key': API_KEY,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ email: emailInput.value })
             });
+
             const data = await res.json();
-            if(data.status === 'verified') alert("Verification Complete!");
-            else document.getElementById('status').innerText = data.detail || "Error";
+
+            if (res.status === 200) {
+                status.innerText = "OTP sent successfully to your inbox!";
+                status.style.color = "green";
+                startTimer(60); // 60 Seconds Timer
+            } else {
+                status.innerText = data.detail || "Failed to send OTP.";
+                status.style.color = "red";
+                sendBtn.disabled = false;
+                btnText.innerText = "Get Verification Code";
+            }
+        } catch (err) {
+            status.innerText = "Connection Error!";
+            status.style.color = "red";
+            sendBtn.disabled = false;
+            btnText.innerText = "Get Verification Code";
+        } finally {
+            loader.style.display = "none";
         }
-    </script>
+    }
+
+    function startTimer(seconds) {
+        const sendBtn = document.getElementById('sendBtn');
+        const btnText = document.getElementById('btnText');
+        const timerDisplay = document.getElementById('timerDisplay');
+        
+        let timeLeft = seconds;
+        
+        countdown = setInterval(() => {
+            if (timeLeft <= 0) {
+                clearInterval(countdown);
+                sendBtn.disabled = false;
+                btnText.innerText = "Resend Code";
+                timerDisplay.innerText = "";
+            } else {
+                btnText.innerText = `Wait ${timeLeft}s`;
+                timerDisplay.innerText = `You can request a new code in ${timeLeft} seconds.`;
+                timeLeft--;
+            }
+        }, 1000);
+    }
+
+    async function verifyOTP() {
+        const email = document.getElementById('email').value;
+        const otp = document.getElementById('otp').value;
+        const status = document.getElementById('status');
+
+        if (!otp) {
+            status.innerText = "Enter the OTP code first!";
+            status.style.color = "red";
+            return;
+        }
+
+        try {
+            const res = await fetch('/verify-otp', {
+                method: 'POST',
+                headers: { 
+                    'access-key': API_KEY,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ email: email, otp_code: otp })
+            });
+
+            const data = await res.json();
+
+            if (data.status === 'verified') {
+                status.innerText = "✅ Verification Complete!";
+                status.style.color = "green";
+                alert("Success! You are verified.");
+            } else {
+                status.innerText = data.detail || "Invalid OTP!";
+                status.style.color = "red";
+            }
+        } catch (err) {
+            status.innerText = "Verification Failed!";
+            status.style.color = "red";
+        }
+    }
+</script>
+
 </body>
 </html>
